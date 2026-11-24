@@ -3,9 +3,13 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
+import { DEV_BYPASS } from '@/lib/dev-bypass';
 
 export default function SignupPage() {
-  const supabase = createClient();
+  // [FRONTEND-FIRST DEV BYPASS] don't build a Supabase browser client while
+  // auth is bypassed (it would throw without real env vars, including during
+  // SSR). Every use below is guarded; the original flow is untouched.
+  const supabase = DEV_BYPASS ? null : createClient();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -16,6 +20,13 @@ export default function SignupPage() {
     e.preventDefault();
     setLoading(true);
     setError('');
+
+    // [FRONTEND-FIRST DEV BYPASS] auth is disabled — explain instead of calling Supabase.
+    if (!supabase) {
+      setError('Dev mode: authentication is bypassed. Use “Enter the app (dev)” above.');
+      setLoading(false);
+      return;
+    }
 
     const { error } = await supabase.auth.signUp({ email, password });
 
@@ -30,6 +41,7 @@ export default function SignupPage() {
   }
 
   async function handleGoogleSignup() {
+    if (!supabase) return; // [FRONTEND-FIRST DEV BYPASS] no Supabase client in dev mode
     await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: `${window.location.origin}/auth/callback` },
@@ -38,8 +50,8 @@ export default function SignupPage() {
 
   if (done) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-center px-4 bg-gradient-to-b from-background to-[#0e1016]">
-        <div className="max-w-sm bg-surface border border-border rounded-xl p-7 shadow-2xl shadow-black/40">
+      <div className="min-h-screen flex items-center justify-center text-center px-4 bg-gradient-to-b from-background to-[var(--sep-bg)]">
+        <div className="max-w-sm bg-surface border border-border rounded-xl p-7 shadow-2xl shadow-black/20 dark:shadow-black/40">
           <p className="mb-1 font-medium">Check your inbox</p>
           <p className="text-muted text-sm mb-5">
             We sent a confirmation link to <span className="text-white">{email}</span>. Click it to activate your account.
@@ -53,10 +65,10 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-background to-[#0e1016] px-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-background to-[var(--sep-bg)] px-4">
       <form
         onSubmit={handleSubmit}
-        className="w-full max-w-sm bg-surface border border-border rounded-xl p-7 shadow-2xl shadow-black/40"
+        className="w-full max-w-sm bg-surface border border-border rounded-xl p-7 shadow-2xl shadow-black/20 dark:shadow-black/40"
       >
         <div className="mb-6">
           <div className="w-9 h-9 rounded-lg bg-primary/20 border border-primary/40 flex items-center justify-center mb-3">
@@ -66,14 +78,24 @@ export default function SignupPage() {
           <p className="text-muted text-sm mt-1">Start generating tests with AI</p>
         </div>
 
+        {DEV_BYPASS && (
+          <div className="mb-5 text-xs bg-yellow-950/30 border border-yellow-900/50 rounded-lg px-3 py-2.5 text-yellow-400 leading-relaxed">
+            Frontend-first dev mode — authentication is bypassed and data is mock.{' '}
+            <Link href="/projects" className="underline underline-offset-2 hover:text-yellow-300">
+              Enter the app (dev) →
+            </Link>
+          </div>
+        )}
+
         {error && (
-          <p className="text-red-400 text-sm mb-4 bg-red-950/30 border border-red-900/50 rounded-lg px-3 py-2">
+          <p className="text-danger text-sm mb-4 bg-danger/10 border border-danger/40 rounded-lg px-3 py-2">
             {error}
           </p>
         )}
 
-        <label className="text-xs text-muted mb-1.5 block">Email</label>
+        <label htmlFor="signup-email" className="text-xs text-muted mb-1.5 block">Email</label>
         <input
+          id="signup-email"
           type="email"
           placeholder="you@example.com"
           value={email}
@@ -81,8 +103,9 @@ export default function SignupPage() {
           required
           className="w-full mb-3 px-3 py-2.5 rounded-lg bg-background border border-border text-sm focus:outline-none focus:border-primary transition-colors"
         />
-        <label className="text-xs text-muted mb-1.5 block">Password</label>
+        <label htmlFor="signup-password" className="text-xs text-muted mb-1.5 block">Password</label>
         <input
+          id="signup-password"
           type="password"
           placeholder="Min 6 characters"
           value={password}

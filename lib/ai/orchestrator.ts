@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { openrouterProvider } from './providers/openrouter';
 import { airforceProvider } from './providers/airforce';
+import { CURRENT_AI_SETUP } from './model-info';
 // Commented out to avoid any accidental cost while running on the free tier.
 // Uncomment these two imports + their PROVIDERS entries below once you buy
 // direct API access at final release - no other code needs to change.
@@ -29,12 +30,12 @@ const PROVIDERS: Record<string, AIProvider> = {
 // Claude/GPT - e.g. { provider: 'anthropic', model: 'claude-sonnet-4-6' }.
 // Nothing else in the app needs to change.
 const MODEL_ROUTING = {
-  test_plan_generation: { provider: 'openrouter', model: 'meta-llama/llama-3.3-70b-instruct:free' },
-  test_case_generation: { provider: 'openrouter', model: 'meta-llama/llama-3.3-70b-instruct:free' },
+  test_plan_generation: { provider: 'openrouter', model: CURRENT_AI_SETUP.model },
+  test_case_generation: { provider: 'openrouter', model: CURRENT_AI_SETUP.model },
   screenshot_analysis: { provider: 'openrouter', model: 'google/gemini-2.0-flash-exp:free' }, // vision-capable free model
   application_understanding: { provider: 'openrouter', model: 'google/gemini-2.0-flash-exp:free' },
-  copilot_chat: { provider: 'openrouter', model: 'meta-llama/llama-3.3-70b-instruct:free' },
-  defect_analysis: { provider: 'openrouter', model: 'meta-llama/llama-3.3-70b-instruct:free' },
+  copilot_chat: { provider: 'openrouter', model: CURRENT_AI_SETUP.model },
+  defect_analysis: { provider: 'openrouter', model: CURRENT_AI_SETUP.model },
   quick_edit: { provider: 'openrouter', model: 'qwen/qwen-2.5-72b-instruct:free' },
   summarization: { provider: 'openrouter', model: 'qwen/qwen-2.5-72b-instruct:free' },
 } as const;

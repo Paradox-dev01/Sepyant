@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useEffect, useState } from 'react';
-import { C } from '@/lib/theme';
+import { C, alpha } from '@/lib/theme';
 
 export function Divider({ onDrag }: { onDrag: (dx: number) => void }) {
   const dragging = useRef(false);
@@ -35,6 +35,9 @@ export function Divider({ onDrag }: { onDrag: (dx: number) => void }) {
   return (
     <div
       onMouseDown={onMouseDown}
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize panel (drag)"
       style={{ width: 4, cursor: 'col-resize', background: 'transparent', flexShrink: 0 }}
       onMouseEnter={(e) => (e.currentTarget.style.background = C.accent + '50')}
       onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
@@ -106,7 +109,19 @@ export function EditableText({
 
   return (
     <div
+      role="button"
+      tabIndex={0}
+      aria-label={`Click to edit: ${value}`}
       onClick={() => setEditing(true)}
+      onKeyDown={(e) => {
+        // [FRONTEND-FIRST FIX] keyboard access for the click-to-edit pattern
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          setEditing(true);
+        }
+      }}
+      onFocus={(e) => (e.currentTarget.style.background = C.surface2)}
+      onBlur={(e) => (e.currentTarget.style.background = 'transparent')}
       style={{ cursor: 'text', padding: '5px 8px', borderRadius: 5, whiteSpace: 'pre-wrap', ...style }}
       onMouseEnter={(e) => (e.currentTarget.style.background = C.surface2)}
       onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
@@ -137,8 +152,8 @@ export function IBtn({
       onClick={onClick}
       disabled={disabled}
       style={{
-        background: active ? `${activeColor}15` : 'none',
-        border: active ? `1px solid ${activeColor}40` : '1px solid transparent',
+        background: active ? alpha(activeColor || C.accent, 8) : 'none',
+        border: active ? `1px solid ${alpha(activeColor || C.accent, 27)}` : '1px solid transparent',
         color: disabled ? C.muted : active ? activeColor : C.fgMuted,
         borderRadius: 5,
         width: 26,

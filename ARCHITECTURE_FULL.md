@@ -1,4 +1,4 @@
-# AI-Powered Manual QA IDE — FULL Architecture (Complete Vision)
+# Sepyant — FULL Architecture (Complete Vision)
 
 **Team:** 3 devs, full-time
 **Scope:** Complete product — all modules from the original vision doc

@@ -1,4 +1,4 @@
-# QA IDE — Phase 1
+# Sepyant — Phase 1
 
 AI-powered test plan / scenario / test case generation from requirements. This is Phase 1
 of the full architecture (see `ARCHITECTURE_FULL.md` in the project docs) — no browser

@@ -24,8 +24,8 @@ export const openrouterProvider: AIProvider = {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
         // OpenRouter asks for these on free models - harmless to include always.
-        'HTTP-Referer': 'https://qa-ide.local',
-        'X-Title': 'QA IDE',
+        'HTTP-Referer': 'https://sepyant.local',
+        'X-Title': 'SEPYANT',
       },
       body: JSON.stringify({
         model,

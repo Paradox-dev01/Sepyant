@@ -1,8 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { generateText } from '@/lib/ai/orchestrator';
+import { DEV_BYPASS, buildMockCopilotReply, getDevProject } from '@/lib/dev-bypass';
+import { loadDevStoreOnce } from '@/lib/dev-store-persistence';
 
 export async function POST(req: NextRequest) {
+  // ===== [FRONTEND-FIRST DEV BYPASS] — dev-only simulated reply =====
+  // No auth check, no DB reads, no AI call. Clearly labeled via devMock:true
+  // and the "[DEV MOCK]" prefix. Remove NEXT_PUBLIC_DEV_BYPASS_AUTH from
+  // .env.local to restore the real flow below.
+  if (DEV_BYPASS) {
+    let body: { projectId?: string; messages?: { role: string; content: string }[] };
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+    }
+    const { projectId, messages } = body || {};
+    if (!projectId || !Array.isArray(messages) || messages.length === 0) {
+      return NextResponse.json({ error: 'projectId and messages are required' }, { status: 400 });
+    }
+    loadDevStoreOnce();
+    const devProject = getDevProject(projectId);
+    const lastUser = [...messages].reverse().find((m) => m.role === 'user')?.content || '';
+    return NextResponse.json({
+      reply: buildMockCopilotReply(devProject?.name, lastUser),
+      devMock: true,
+    });
+  }
+  // ===== end dev bypass =====
+
   const supabase = createClient();
   const {
     data: { user },
@@ -59,9 +86,10 @@ ${contextSummary}
 Conversation so far:
 ${conversationText}
 
-Reply to the last user message. If they ask you to generate test cases, explain briefly what
-you'd generate and suggest they use the main "Generate Test Plan" panel with that requirement
-text, since actual generation happens there (with review/approval), not directly in chat.`;
+Reply to the last user message. [PHASE 1] If the user asks you to generate test cases or a test
+plan, briefly explain what you'd generate and tell them to switch the chat toggle (below the
+message box) to "Generate" mode and paste the requirement there — actual generation with
+review/approval happens in Generate mode, not in Ask mode.`;
 
   let result;
   try {

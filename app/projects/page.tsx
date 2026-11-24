@@ -1,8 +1,23 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
-import NewProjectForm from './new-project-form';
+import { DEV_BYPASS, DEV_USER, getDevProjects } from '@/lib/dev-bypass';
+import { loadDevStoreOnce } from '@/lib/dev-store-persistence';
+import ProjectsOverview from './projects-overview';
 
 export default async function ProjectsPage() {
+  // [SEPYANT 2.0] /projects is now a real projects overview (Phase 2: create,
+  // organise and switch between projects) instead of an automatic redirect
+  // into the most recent workspace. The original Supabase data flow and the
+  // dev-bypass store are unchanged — only the redirect behaviour was
+  // replaced by the overview UI.
+  if (DEV_BYPASS) {
+    // [DEV MOCK PERSISTENCE] hydrate the mock store from disk (first access
+    // in this server process only) so crafted demo data survives restarts.
+    loadDevStoreOnce();
+    const devProjects = getDevProjects();
+    return <ProjectsOverview userEmail={DEV_USER.email} projects={devProjects.map((p) => ({ id: p.id, name: p.name, created_at: p.created_at, description: p.description }))} />;
+  }
+
   const supabase = createClient();
   const {
     data: { user },
@@ -15,23 +30,5 @@ export default async function ProjectsPage() {
     .select('id, name, description, created_at')
     .order('created_at', { ascending: false });
 
-  // If they already have a project, skip straight to the workspace.
-  if (projects && projects.length > 0) {
-    redirect(`/projects/${projects[0].id}`);
-  }
-
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-background to-[#0e1016] px-4">
-      <div className="w-full max-w-sm">
-        <div className="mb-6 text-center">
-          <div className="w-9 h-9 rounded-lg bg-primary/20 border border-primary/40 flex items-center justify-center mx-auto mb-3">
-            <span className="text-primary text-sm font-bold">S</span>
-          </div>
-          <h1 className="text-xl font-semibold">Welcome to Sepyant</h1>
-          <p className="text-muted text-sm mt-1">Create your first project to get started</p>
-        </div>
-        <NewProjectForm />
-      </div>
-    </div>
-  );
+  return <ProjectsOverview userEmail={user.email || ''} projects={projects || []} />;
 }

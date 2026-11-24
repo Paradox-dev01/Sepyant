@@ -3,8 +3,42 @@ import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { generateStructured } from '@/lib/ai/orchestrator';
 import { buildTestPlanPrompt } from '@/lib/ai/prompts';
 import { TestPlanGenerationSchema } from '@/lib/ai/schemas';
+import { DEV_BYPASS, buildMockGeneration, getDevProject } from '@/lib/dev-bypass';
+import { loadDevStoreOnce, saveDevStore } from '@/lib/dev-store-persistence';
 
 export async function POST(req: NextRequest) {
+  // ===== [FRONTEND-FIRST DEV BYPASS] — dev-only simulated response =====
+  // No auth check, no DB writes, no AI call. The response is clearly labeled
+  // via devMock:true, "[DEV MOCK]" strings, and the sidebar DEV badge. Remove
+  // NEXT_PUBLIC_DEV_BYPASS_AUTH from .env.local to restore the real flow
+  // below (auth -> validate -> DB -> AI -> persist).
+  if (DEV_BYPASS) {
+    let body: { projectId?: string; requirementText?: string };
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+    }
+    const { projectId, requirementText } = body || {};
+    if (!projectId || !requirementText?.trim()) {
+      return NextResponse.json(
+        { error: 'projectId and requirementText are required' },
+        { status: 400 }
+      );
+    }
+    loadDevStoreOnce();
+    const devProject = getDevProject(projectId);
+    if (!devProject) {
+      return NextResponse.json({ error: 'Project not found' }, { status: 404 });
+    }
+    const mockResponse = buildMockGeneration(projectId, devProject.name, requirementText);
+    // [DEV MOCK PERSISTENCE] buildMockGeneration stored the new plan in the
+    // mock store — snapshot it so restarts keep the full demo history.
+    saveDevStore();
+    return NextResponse.json(mockResponse);
+  }
+  // ===== end dev bypass =====
+
   const supabase = createClient();
 
   const {
@@ -95,11 +129,27 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (planError || !testPlan) {
-    return NextResponse.json({ error: 'Failed to save test plan' }, { status: 500 });
+    // [PHASE 1] roll back the requirement saved in step 1 so no orphan rows
+    // are left behind when the plan insert fails.
+    const delReq = await supabase.from('requirements').delete().eq('id', requirement.id);
+    if (delReq.error) {
+      console.error('[sepyant] requirement rollback failed:', delReq.error.message, '(ref:', requirement.id, ')');
+    }
+    return NextResponse.json(
+      { error: `Failed to save test plan: ${planError?.message || 'unknown error'}. The partial generation was rolled back — nothing was saved.` },
+      { status: 500 }
+    );
   }
 
-  // 4. Save scenarios + test cases
-  const savedScenarios = [];
+  // 4. Save scenarios + test cases.
+  // [PHASE 1] Failed writes are no longer silently skipped. Supabase has no
+  // client-side transactions, so on any failure we compensate manually: the
+  // plan delete cascades to scenarios/cases (FK ON DELETE CASCADE), the
+  // requirement delete removes the orphaned requirement row, and the client
+  // receives a visible 500 instead of a half-saved generation round.
+  const savedScenarios: { id: string; title: string; description: string; priority: string; test_cases: any[] }[] = [];
+  let writeError: string | null = null;
+
   for (const scenario of generated.scenarios) {
     const { data: savedScenario, error: scenarioError } = await supabase
       .from('test_scenarios')
@@ -112,7 +162,10 @@ export async function POST(req: NextRequest) {
       .select()
       .single();
 
-    if (scenarioError || !savedScenario) continue;
+    if (scenarioError || !savedScenario) {
+      writeError = `Failed to save test scenario "${scenario.title}": ${scenarioError?.message || 'unknown error'}`;
+      break;
+    }
 
     const casesToInsert = scenario.test_cases.map((tc) => ({
       test_scenario_id: savedScenario.id,
@@ -129,12 +182,35 @@ export async function POST(req: NextRequest) {
       needs_verification: tc.needs_verification,
     }));
 
-    const { data: savedCases } = await supabase
+    const { data: savedCases, error: casesError } = await supabase
       .from('test_cases')
       .insert(casesToInsert)
       .select();
 
-    savedScenarios.push({ ...savedScenario, test_cases: savedCases || [] });
+    if (casesError || !savedCases) {
+      writeError = `Failed to save test cases for scenario "${scenario.title}": ${casesError?.message || 'unknown error'}`;
+      break;
+    }
+
+    savedScenarios.push({ ...savedScenario, test_cases: savedCases });
+  }
+
+  if (writeError) {
+    // Roll back the partial round. Failure of the rollback itself is logged
+    // loudly — orphan rows would need manual cleanup in that unlikely case.
+    const delPlan = await supabase.from('test_plans').delete().eq('id', testPlan.id);
+    const delReq = await supabase.from('requirements').delete().eq('id', requirement.id);
+    if (delPlan.error || delReq.error) {
+      console.error(
+        '[sepyant] generation rollback failed — orphaned rows may exist:',
+        JSON.stringify({ plan: delPlan.error?.message, requirement: delReq.error?.message, testPlanId: testPlan.id, requirementId: requirement.id })
+      );
+      return NextResponse.json(
+        { error: `${writeError} Automatic cleanup also failed (ref: plan ${testPlan.id}); please contact an administrator.` },
+        { status: 500 }
+      );
+    }
+    return NextResponse.json({ error: `${writeError} The partial generation was rolled back — nothing was saved.` }, { status: 500 });
   }
 
   // 5. Log AI usage (admin client - bypasses RLS, this is a trusted server-side write)

@@ -1,8 +1,29 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
+import { DEV_BYPASS, DEV_USER, getDevProject, getDevProjects, getDevTestPlans } from '@/lib/dev-bypass';
+import { loadDevStoreOnce } from '@/lib/dev-store-persistence';
 import Workspace from './workspace';
 
 export default async function ProjectPage({ params }: { params: { id: string } }) {
+  // [FRONTEND-FIRST DEV BYPASS] serve mock workspace data from the in-memory
+  // dev store instead of Supabase. The original data flow below is untouched.
+  if (DEV_BYPASS) {
+    // [DEV MOCK PERSISTENCE] hydrate the mock store from disk (first access
+    // in this server process only) so crafted demo data survives restarts.
+    loadDevStoreOnce();
+    const devProject = getDevProject(params.id);
+    if (!devProject) redirect('/projects');
+
+    return (
+      <Workspace
+        project={{ id: devProject.id, name: devProject.name }}
+        allProjects={getDevProjects().map((p) => ({ id: p.id, name: p.name }))}
+        initialTestPlans={getDevTestPlans(devProject.id)}
+        userEmail={DEV_USER.email}
+      />
+    );
+  }
+
   const supabase = createClient();
   const {
     data: { user },

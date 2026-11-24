@@ -4,10 +4,14 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
+import { DEV_BYPASS } from '@/lib/dev-bypass';
 
 export default function LoginPage() {
   const router = useRouter();
-  const supabase = createClient();
+  // [FRONTEND-FIRST DEV BYPASS] don't build a Supabase browser client while
+  // auth is bypassed (it would throw without real env vars, including during
+  // SSR). Every use below is guarded; the original flow is untouched.
+  const supabase = DEV_BYPASS ? null : createClient();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -20,6 +24,13 @@ export default function LoginPage() {
     setLoading(true);
     setError('');
     setNeedsConfirmation(false);
+
+    // [FRONTEND-FIRST DEV BYPASS] auth is disabled — explain instead of calling Supabase.
+    if (!supabase) {
+      setError('Dev mode: authentication is bypassed. Use “Enter the app (dev)” above.');
+      setLoading(false);
+      return;
+    }
 
     const { error } = await supabase.auth.signInWithPassword({ email, password });
 
@@ -43,12 +54,14 @@ export default function LoginPage() {
   }
 
   async function handleResendConfirmation() {
+    if (!supabase) return; // [FRONTEND-FIRST DEV BYPASS] no Supabase client in dev mode
     setResendStatus('sending');
     const { error } = await supabase.auth.resend({ type: 'signup', email });
     setResendStatus(error ? 'idle' : 'sent');
   }
 
   async function handleGoogleLogin() {
+    if (!supabase) return; // [FRONTEND-FIRST DEV BYPASS] no Supabase client in dev mode
     await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: { redirectTo: `${window.location.origin}/auth/callback` },
@@ -56,21 +69,32 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-background to-[#0e1016] px-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-background to-[var(--sep-bg)] px-4">
       <form
         onSubmit={handleSubmit}
-        className="w-full max-w-sm bg-surface border border-border rounded-xl p-7 shadow-2xl shadow-black/40"
+        className="w-full max-w-sm bg-surface border border-border rounded-xl p-7 shadow-2xl shadow-black/20 dark:shadow-black/40"
       >
         <div className="mb-6">
           <div className="w-9 h-9 rounded-lg bg-primary/20 border border-primary/40 flex items-center justify-center mb-3">
-            <span className="text-primary text-sm font-bold">Q</span>
+            {/* [PHASE 1] was "Q" — a leftover from the QA-IDE codebase this was
+                ported from. The product mark is "S" (matches /projects). */}
+            <span className="text-primary text-sm font-bold">S</span>
           </div>
           <h1 className="text-xl font-semibold">Welcome to Sepyant</h1>
           <p className="text-muted text-sm mt-1">Log in to your AI QA workspace</p>
         </div>
 
+        {DEV_BYPASS && (
+          <div className="mb-5 text-xs bg-yellow-950/30 border border-yellow-900/50 rounded-lg px-3 py-2.5 text-yellow-400 leading-relaxed">
+            Frontend-first dev mode — authentication is bypassed and data is mock.{' '}
+            <Link href="/projects" className="underline underline-offset-2 hover:text-yellow-300">
+              Enter the app (dev) →
+            </Link>
+          </div>
+        )}
+
         {error && (
-          <p className="text-red-400 text-sm mb-4 bg-red-950/30 border border-red-900/50 rounded-lg px-3 py-2">
+          <p className="text-danger text-sm mb-4 bg-danger/10 border border-danger/40 rounded-lg px-3 py-2">
             {error}
           </p>
         )}
@@ -93,8 +117,9 @@ export default function LoginPage() {
           </div>
         )}
 
-        <label className="text-xs text-muted mb-1.5 block">Email</label>
+        <label htmlFor="login-email" className="text-xs text-muted mb-1.5 block">Email</label>
         <input
+          id="login-email"
           type="email"
           placeholder="you@example.com"
           value={email}
@@ -102,8 +127,9 @@ export default function LoginPage() {
           required
           className="w-full mb-3 px-3 py-2.5 rounded-lg bg-background border border-border text-sm focus:outline-none focus:border-primary transition-colors"
         />
-        <label className="text-xs text-muted mb-1.5 block">Password</label>
+        <label htmlFor="login-password" className="text-xs text-muted mb-1.5 block">Password</label>
         <input
+          id="login-password"
           type="password"
           placeholder="••••••••"
           value={password}
